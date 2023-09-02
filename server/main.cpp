@@ -18,7 +18,8 @@
 #define CONTENT_PATH "/tmp/some/path"
 #define BACKLOG 5 // number of client
 #define READ_CMD  "read \r\n"
-//#define WRITE_CMD "write\r\n"
+#define WRITE_CMD "write\r\n"
+#define CMD_LEN (sizeof(READ_CMD)-1)
 
 using namespace std;
 
@@ -59,28 +60,38 @@ public:
 };
 
 int respond(int client,Repository *repo){
+    //char buf[1024];
     char buf[1024];
-    //char cmd[sizeof(READ_CMD)];
-    //ssize_t n = recv(client,cmd,sizeof(READ_CMD),0);
-    ssize_t n = read(client,buf,1024);
+    //cout << sizeof(READ_CMD) << endl;
+    ssize_t n = read(client,buf,CMD_LEN);//-null char
+    //ssize_t n = read(client,buf,1024);
     if(n < 0){
         close(client);
         return EXIT_FAILURE;
     }
-    //if(strncmp(cmd,"read \n",6)==0){
-    if(strncmp(buf,"read \r\n",6)==0){
+    cout << n << endl;
+    string cmd(buf,n);
+    cout << ":" << cmd << ":"<<endl;
+    if(cmd == READ_CMD){
+    //if(strncmp(buf,"read \r\n",6)==0){
         //if(cmd == "read \n"){
         //snprintf(buf,sizeof(buf),"%s\n%s","write",argv[3]);
-        strncpy(buf,"+PONG\r\n",1024);
+        strncpy(buf,"PONG\r\n",1024);
         write(client, buf, strlen(buf));
         close(client);
-    }else if(strncmp(buf,"write\r\n",6)==0){
-    //}else if(strncmp(cmd,"write\n",6)==0){
+    //}else if(strncmp(buf,"write\r\n",6)==0){
+    }else if(cmd == WRITE_CMD){
     //}else if(cmd == "write\n"){
         //ssize_t n = recv(client,buf,1024,0);
         //repo.write()
-        cout <<"buff:"<< buf << ":buff"<<endl;
-        strncpy(buf,"+OK\r\n",1024);
+        n = read(client,buf,1024);
+        if(n < 0){
+            close(client);
+            return EXIT_FAILURE;
+        }
+        string cont(buf,n);
+        cout <<"buff:"<< cont << ":buff"<<endl;
+        strncpy(buf,"OK\r\n",1024);
         write(client, buf, strlen(buf));
         close(client);
     }else{
