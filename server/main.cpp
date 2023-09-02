@@ -21,6 +21,9 @@
 #define BACKLOG 5 // number of client
 #define READ_CMD  "read \r\n"
 #define WRITE_CMD "write\r\n"
+#define INSERT_CMD "insert\n"
+
+// ignore null char
 #define CMD_LEN (sizeof(READ_CMD)-1)
 
 using namespace std;
@@ -49,6 +52,7 @@ public:
         if(!file){
             return false;
         }
+        cout << file.tellg() <<endl;
         file >> ans;
         file.close();
         return true;
@@ -56,16 +60,59 @@ public:
     bool write(string newContent){
         pthread_mutex_lock(&lock);
         ofstream file;
+        file.open(filePath);
         if(!file){
             pthread_mutex_unlock(&lock);
             return false;
         }
-        file.open(filePath);
         file << newContent;
         file.flush();
         file.close();
         pthread_mutex_unlock(&lock);
         return true;
+    }
+    bool insert(string newContent, long long pos){
+        //string filePath = "./foo";
+        fstream file(filePath,ios_base::in | ios_base::out);
+        if(!file){
+            //pthread_mutex_unlock(&lock);
+            return 1;
+        }
+        cout << file.tellp() << endl;
+        //file.seekp(0,ios::end);
+        cout << file.tellp() << endl;
+        file.seekp(pos,ios::beg);
+        //file.seekp(ios::end);
+        cout << file.tellp() << endl;
+        file << "newContent";
+        //file.write(newContent.c_str(),newContent.size());
+        file.flush();
+        file.close();
+        return true;
+        /*
+        cout << newContent <<":"<< pos <<":"<<endl;
+        pthread_mutex_lock(&lock);
+        fstream file(filePath,ios_base::in | ios_base::out);
+        if(!file){
+            pthread_mutex_unlock(&lock);
+            return false;
+        }
+        cout << file.tellp() << endl;
+        //file.seekp(0,ios::end);
+        cout << file.tellp() << endl;
+        file.seekp(pos,ios::beg);
+        //file.seekp(ios::end);
+        cout << file.tellp() << endl;
+        file << newContent;
+        //file.write(newContent.c_str(),newContent.size());
+        file.flush();
+        file.close();
+        string ans;
+        read(ans);
+        cout <<"ans:"<< ans <<":ans"<< endl;
+        
+        pthread_mutex_unlock(&lock);
+        return true;*/
     }
 };
 
@@ -78,14 +125,12 @@ public:
         if(server_fd == -1){
             cerr << "Socket creation failed: " << strerror(errno) << endl;
             throw runtime_error("foo");
-            //return EXIT_FAILURE;
         }
         // enable to launch multiple times
         int reuse_flag = 1;// 1 means true
         if(setsockopt(server_fd,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag)) == -1){
             cerr << "Socket cannot reuse: " << strerror(errno) << endl;
             throw runtime_error("foo");
-            //return EXIT_FAILURE;
         }
         
         struct sockaddr_in server_addr = {
@@ -98,14 +143,12 @@ public:
         if(::bind(server_fd,(struct sockaddr *)&server_addr, sizeof(server_addr)) == -1){
             cerr << "Socket bind failed: " << strerror(errno) << endl;
             throw runtime_error("foo");
-            //return EXIT_FAILURE;
         }
         cout << "Waiting for a client..." << endl;
 
         if(listen(server_fd,BACKLOG) == -1){
             cerr << "Socket listen failed: " << strerror(errno) << endl;
             throw runtime_error("foo");
-            //return EXIT_FAILURE;
         }
     }
     virtual ~Server(){
@@ -113,17 +156,17 @@ public:
     }
     int respond(int client,Repository *repo){
         char buf[1024];
-        ssize_t n = read(client,buf,CMD_LEN);//ignore null char
+        ssize_t n = read(client,buf,CMD_LEN);
         if(n < 0){
             close(client);
             return EXIT_FAILURE;
         }
         string cmd(buf,n);
         if(cmd == READ_CMD){
-            string content; //todo: support large file
+            string content; //TODO: support large file
             repo->read(content);
             content.copy(buf,1024);
-            write(client, buf, content.size());// ignore null char
+            write(client, buf, content.size());
             close(client);
         }else if(cmd == WRITE_CMD){
             n = read(client,buf,1024);
@@ -132,7 +175,26 @@ public:
                 return EXIT_FAILURE;
             }
             string cont(buf,n);
-            repo->write(buf);
+            repo->write(cont);
+            strncpy(buf,"OK\r\n",1024);
+            write(client, buf, strlen(buf));
+            close(client);
+        }else if(cmd == INSERT_CMD){
+            // position is limited to 64 bit integer
+            n = read(client,buf,20);
+            if(n < 0){
+                close(client);
+                return EXIT_FAILURE;
+            }
+            string spos(buf,n);
+            long long pos = stoll(spos);
+            n = read(client,buf,1024);
+            if(n < 0){
+                close(client);
+                return EXIT_FAILURE;
+            }
+            string cont(buf,n);
+            repo->insert(cont,pos);
             strncpy(buf,"OK\r\n",1024);
             write(client, buf, strlen(buf));
             close(client);
@@ -167,15 +229,12 @@ class MultiProcessServer : public Server{
                 cerr << "Socket accept failed: " << strerror(errno) << endl;
                 return EXIT_FAILURE;
             }
-            //respond(client);
             int child_pid = fork();
             if(child_pid < 0){//error
                 return EXIT_FAILURE;
             }else if(child_pid == 0){//child
-                //cout << "child start" << endl;
                 respond(client,repo);
                 sleep(10);//10 second
-                //cout << "child end" << endl;
                 close(server_fd);
                 return 0;
             }else{//parent
@@ -233,17 +292,36 @@ int MultiThreadServer::run(Repository *repo){
     // TODO: wait for children
 }
 
+void print_usage(string file_name){
+    cout << file_name << " <thread|process>" << endl;
+    cout << "example:" << endl;
+    cout << "> " << file_name << " thread" << "   'run as multithread'"<< endl;
+    cout << "> " << file_name << " process" << "  'run as multiprocess'"<< endl;
+}
+
 int main(int argc, const char * argv[]) {
-    try{
-        //Server server = Server();
-        Repository * repo = new Repository("./foo");
-        
-        //Server *server = new MultiProcessServer();
-        Server *server = new MultiThreadServer();
-        server->run(repo);
-    }catch(runtime_error e){
-        
+    vector<string> args(argv, argv + argc);
+    if(args.size() != 2){
+        cerr << "arg number miss match" << endl;
+        print_usage(args[0]);
+        return EXIT_FAILURE;
     }
-    //close(server);
+    try{
+        Repository * repo = new Repository("./foo");
+
+        if(args[1] == "thread"){
+            Server *server = new MultiThreadServer();
+            server->run(repo);
+        }else if(args[1] == "process"){
+            Server *server = new MultiProcessServer();
+            server->run(repo);
+        }else{
+            cerr << "command unknown" << endl;
+            print_usage(args[0]);
+            return EXIT_FAILURE;
+        }
+    }catch(runtime_error e){
+        return EXIT_FAILURE;
+    }
     return 0;
 }
