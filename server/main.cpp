@@ -14,7 +14,7 @@
 #include <string>
 #include <stdio.h>
 #include <filesystem>
-#include <thread>
+#include <pthread.h>
 
 #define PORT 8080
 #define CONTENT_PATH "/tmp/some/path"
@@ -199,7 +199,7 @@ class MultiThreadServer : public Server{
     int run(Repository *repo) override;
 };
 
-class Worker{
+/*class Worker{
     int client;
     Repository*repo;
     MultiThreadServer *server;
@@ -215,7 +215,34 @@ class Worker{
         //pthread_exit(pval);
         server->respond(client,repo);
     }
+};*/
+class Pack{
+    int client;
+    Repository*repo;
+    MultiThreadServer *server;
+public:
+    Pack(int client_fd,Repository *repository,MultiThreadServer *serv){
+        client = client_fd;
+        repo = repository;
+        server = serv;
+    }
+    void run(){
+        server->respond(client,repo);
+    }
 };
+
+void *worker(void *arg) {
+    char *ret;
+    Pack *pack = (Pack*)arg;
+  //printf("thread() entered with argument '%s'¥n", arg);
+    /*if ((ret = (char*) malloc(20)) == NULL) {
+        perror("malloc() error");
+        exit(2);
+    }
+    strcpy(ret, "This is a test");*/
+    pack->run();
+    pthread_exit(&ret);
+}
 
 int MultiThreadServer::run(Repository *repo){
     while(true){
@@ -226,8 +253,9 @@ int MultiThreadServer::run(Repository *repo){
             cerr << "Socket accept failed: " << strerror(errno) << endl;
             return EXIT_FAILURE;
         }
-        //pthread_t thid;
-        if(pthread_create(&thid, NULL, thread, (void *)this)){
+        pthread_t thid;
+        Pack *pack = new Pack(client,repo,this);
+        if(pthread_create(&thid, NULL, worker, (void *)pack)){
             
         }
         //thread t1(this);
