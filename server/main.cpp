@@ -6,6 +6,7 @@
 //
 
 #include <iostream>
+#include <sstream>
 #include <fstream> // ofstream
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -46,21 +47,20 @@ public:
     ~Repository(){
         
     }
-    bool read(string &ans){
+    bool read(stringstream &ans){
         ifstream file;// cannot share because stream has state.
         file.open(filePath);
         if(!file){
             return false;
         }
-        cout << file.tellg() <<endl;
-        file >> ans;
+        stringstream buffer;
+        ans << file.rdbuf();
         file.close();
         return true;
     }
-    bool write(string newContent){
+    bool write(string &newContent){
         pthread_mutex_lock(&lock);
-        ofstream file;
-        file.open(filePath);
+        fstream file(filePath,ios_base::out | ios_base::trunc);
         if(!file){
             pthread_mutex_unlock(&lock);
             return false;
@@ -71,48 +71,19 @@ public:
         pthread_mutex_unlock(&lock);
         return true;
     }
-    bool insert(string newContent, long long pos){
-        //string filePath = "./foo";
-        fstream file(filePath,ios_base::in | ios_base::out);
-        if(!file){
-            //pthread_mutex_unlock(&lock);
-            return 1;
-        }
-        cout << file.tellp() << endl;
-        //file.seekp(0,ios::end);
-        cout << file.tellp() << endl;
-        file.seekp(pos,ios::beg);
-        //file.seekp(ios::end);
-        cout << file.tellp() << endl;
-        file << "newContent";
-        //file.write(newContent.c_str(),newContent.size());
-        file.flush();
-        file.close();
-        return true;
-        /*
-        cout << newContent <<":"<< pos <<":"<<endl;
+    bool insert(string &newContent, long long pos){
         pthread_mutex_lock(&lock);
         fstream file(filePath,ios_base::in | ios_base::out);
         if(!file){
             pthread_mutex_unlock(&lock);
             return false;
         }
-        cout << file.tellp() << endl;
-        //file.seekp(0,ios::end);
-        cout << file.tellp() << endl;
         file.seekp(pos,ios::beg);
-        //file.seekp(ios::end);
-        cout << file.tellp() << endl;
         file << newContent;
-        //file.write(newContent.c_str(),newContent.size());
         file.flush();
         file.close();
-        string ans;
-        read(ans);
-        cout <<"ans:"<< ans <<":ans"<< endl;
-        
         pthread_mutex_unlock(&lock);
-        return true;*/
+        return true;
     }
 };
 
@@ -163,10 +134,10 @@ public:
         }
         string cmd(buf,n);
         if(cmd == READ_CMD){
-            string content; //TODO: support large file
+            stringstream content; //TODO: support large file
             repo->read(content);
-            content.copy(buf,1024);
-            write(client, buf, content.size());
+            long n = content.rdbuf()->sgetn(buf,1024);
+            write(client, buf, n);
             close(client);
         }else if(cmd == WRITE_CMD){
             n = read(client,buf,1024);
@@ -181,7 +152,7 @@ public:
             close(client);
         }else if(cmd == INSERT_CMD){
             // position is limited to 64 bit integer
-            n = read(client,buf,20);
+            n = read(client,buf,20+2);//+2 for \r\n
             if(n < 0){
                 close(client);
                 return EXIT_FAILURE;
