@@ -37,67 +37,84 @@ public:
     }
 };*/
 
+int respond(int client){
+    char buf[1024];
+    ssize_t n = recv(client,buf,1024,0);
+    if(n < 0){
+        return EXIT_FAILURE;
+    }
+    strncpy(buf,"+PONG\r\n",1024);
+    send(client, buf, strlen(buf),0);
+    cout << "replied"<<endl;
+    close(client);
+    return 0;
+}
+
 int main(int argc, const char * argv[]) {
     // create a socket
+    cout << argv[0]<<endl;
     int server = socket(AF_INET, SOCK_STREAM, 0);
     if(server == -1){
         cerr << "Socket creation failed: " << strerror(errno) << endl;
-        return 1;
+        return EXIT_FAILURE;
     }
     // enable to launch multiple times
     int reuse_flag = 1;// 1 means true
-    if(setsockopt(server,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag)) != 0){
+    if(setsockopt(server,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag)) == -1){
         cerr << "Socket cannot reuse: " << strerror(errno) << endl;
-        return 1;
+        return EXIT_FAILURE;
     }
     
     struct sockaddr_in server_addr = {
         .sin_family = AF_INET,
         .sin_port   = htons(PORT),
         .sin_addr   = {htonl(INADDR_ANY)},
-    };
+    };// C++20
 
     // bind port
-    if(::bind(server,(struct sockaddr *)&server_addr, sizeof(server_addr)) != 0){
+    if(::bind(server,(struct sockaddr *)&server_addr, sizeof(server_addr)) == -1){
         cerr << "Socket bind failed: " << strerror(errno) << endl;
-        return 1;
+        return EXIT_FAILURE;
     }
     cout << "Waiting for a client..." << endl;
     //Content *content = new Content(CONTENT_PATH);
 
-    if(listen(server,BACKLOG) != 0){
+    if(listen(server,BACKLOG) == -1){
         cerr << "Socket listen failed: " << strerror(errno) << endl;
-        return 1;
-    }
-    struct sockaddr_in client_addr;
-    char buf[1024];
-    socklen_t client_addr_len = sizeof(client_addr);
-    int client = accept(server, (struct sockaddr *)&client_addr,&client_addr_len);
-    if(client == -1){
-        cerr << "Socket accept failed: " << strerror(errno) << endl;
-        return 1;
+        return EXIT_FAILURE;
     }
     while(true){
-        // listen
+        struct sockaddr_in client_addr;
+        socklen_t client_addr_len = sizeof(client_addr);
+        int client = accept(server, (struct sockaddr *)&client_addr,&client_addr_len);
+        if(client == -1){
+            cerr << "Socket accept failed: " << strerror(errno) << endl;
+            return EXIT_FAILURE;
+        }
+        respond(client);
+        /*int child_pid = fork();
+        if(child_pid < 0){//error
+            
+        }else if(child_pid == 0){//child
+            //close(server);
+            
+        }else{//parent
+            //close(client);
+            continue;
+        }*/
         cout << "wait"<<endl;
-        
         //fork(){//process thread
         
-        ssize_t n = recv(client,buf,1024,0);
-        if(n <= 0){
-            break;
-        }
         /*if(payload.start_with("read")){
-            send("OK:"+content.read());
-        }else if(payload.starts_with("write")){
-            //read body
-            string newContent = payload.readbody()
-            content.write(newContent);
-            send("OK:");
-        }*/
-        strncpy(buf,"+PONG\r\n",1024);
-        send(client, buf, strlen(buf),0);
-        cout << "replied"<<endl;
+         send("OK:"+content.read());
+         }else if(payload.starts_with("write")){
+         //read body
+         string newContent = payload.readbody()
+         content.write(newContent);
+         send("OK:");
+         }*/
+
+        //}
     }
     close(server);
     return 0;
