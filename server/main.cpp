@@ -6,14 +6,22 @@
 //
 
 #include <iostream>
+#include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/in.h> //for struct_in
 #include <string>
+#include <stdio.h>
 
-//using namespace std;
+#define PORT 8080
+#define CONTENT_PATH "/tmp/some/path"
+#define BACKLOG 5 // number of client
 
-class Content{
+using namespace std;
+
+/*class Content{
     pthread_mutex_t lock;
     int file;
+public:
     Content(string filePath){
         pthread_mutex_init(lock, <#const pthread_mutexattr_t * _Nullable#>);
         file = open(filePath);
@@ -26,33 +34,62 @@ class Content{
         file.write(newContent);
         pthread_mutex_unlock(lock);
     }
-};
+};*/
 
 int main(int argc, const char * argv[]) {
-    // insert code here...
-    int server = socket(AF_INET, SOCK_STREAM, 0)
-    if((server < 0){
-        std::cerr << "Failed to open socket" << endl;
+    // create a socket
+    int server = socket(AF_INET, SOCK_STREAM, 0);
+    if(server < 0){
+        cerr << "Socket creation failed: " << strerror(errno) << endl;
+        return 1;
     }
+    // enable to launch multiple times
+    int reuse_flag = 1;// 1 means true
+    if(setsockopt(server,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag))){
+        cerr << "Socket cannot reuse: " << strerror(errno) << endl;
+        return 1;
+    }
+    
+    struct sockaddr_in server_addr = {
+        .sin_family = AF_INET,
+        .sin_port   = htons(PORT),
+        .sin_addr   = {htonl(INADDR_ANY)},
+    };
+
     // bind port
-    server = bind("localhost","8080");
-    Content content = new Content("/tmp/some/path");
-    // listen
+    if(::bind(server,(struct sockaddr *)&server_addr, sizeof(server_addr))!=0){
+        cerr << "Socket bind failed: " << strerror(errno) << endl;
+        return 1;
+    }
+    cout << "Waiting for a client..." << endl;
+    //Content *content = new Content(CONTENT_PATH);
+    
+    struct sockaddr_in client_addr;
+    char buf[1024];
     while(true){
-        listen(server);
-        fd client = accept(server, <#struct sockaddr *#>, <#socklen_t *#>);
-        fork(){//process thread
-            
+        // listen
+        if(listen(server,BACKLOG)!=0){
+            cerr << "Socket listen failed: " << strerror(errno) << endl;
+            return 1;
         }
-        string payload = recv(client);
-        if(payload.start_with("read")){
+        socklen_t client_addr_len = sizeof(client_addr);
+        int client = accept(server, (struct sockaddr *)&client_addr,&client_addr_len);
+        //fork(){//process thread
+        
+        ssize_t n = recv(client,buf,1024,0);
+        if(n <= 0){
+            break;
+        }
+        /*if(payload.start_with("read")){
             send("OK:"+content.read());
         }else if(payload.starts_with("write")){
             //read body
             string newContent = payload.readbody()
             content.write(newContent);
             send("OK:");
-        }
+        }*/
+        strncpy(buf,"+PONG\r\n",1024);
+        send(client, buf, strlen(buf),0);
     }
     // accpect
     
