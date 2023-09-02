@@ -6,6 +6,7 @@
 //
 
 #include <iostream>
+#include <fstream> // ofstream
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h> // for struct_in
@@ -16,37 +17,89 @@
 #define PORT 8080
 #define CONTENT_PATH "/tmp/some/path"
 #define BACKLOG 5 // number of client
+#define READ_CMD  "read \r\n"
+//#define WRITE_CMD "write\r\n"
 
 using namespace std;
 
-/*class Content{
+class Repository{
     pthread_mutex_t lock;
-    int file;
+    string filePath;
 public:
-    Content(string filePath){
-        pthread_mutex_init(lock, <#const pthread_mutexattr_t * _Nullable#>);
-        file = open(filePath);
+    Repository(string filePath){
+        pthread_mutex_init(&lock, NULL);
+        filePath = filePath;
     }
-    string read(){
-        return file.read();
+    ~Repository(){
+        
+    }
+    bool read(string &ans){
+        ifstream file;// cannot share because stream has state.
+        file.open(filePath);
+        if(!file){
+            return false;
+        }
+        file >> ans;
+        file.close();
+        return true;
     }
     bool write(string newContent){
-        pthread_mutex_lock(lock);
-        file.write(newContent);
-        pthread_mutex_unlock(lock);
+        pthread_mutex_lock(&lock);
+        ofstream file;
+        if(!file){
+            pthread_mutex_unlock(&lock);
+            return false;
+        }
+        file.open(filePath);
+        file << newContent;
+        file.close();
+        pthread_mutex_unlock(&lock);
+        return true;
     }
-};*/
+};
 
-int respond(int client){
+int respond(int client,Repository *repo){
     char buf[1024];
-    ssize_t n = recv(client,buf,1024,0);
+    //char cmd[sizeof(READ_CMD)];
+    //ssize_t n = recv(client,cmd,sizeof(READ_CMD),0);
+    ssize_t n = read(client,buf,1024);
     if(n < 0){
+        close(client);
         return EXIT_FAILURE;
     }
-    strncpy(buf,"+PONG\r\n",1024);
-    send(client, buf, strlen(buf),0);
-    cout << "replied"<<endl;
-    close(client);
+    //if(strncmp(cmd,"read \n",6)==0){
+    if(strncmp(buf,"read \r\n",6)==0){
+        //if(cmd == "read \n"){
+        //snprintf(buf,sizeof(buf),"%s\n%s","write",argv[3]);
+        strncpy(buf,"+PONG\r\n",1024);
+        write(client, buf, strlen(buf));
+        close(client);
+    }else if(strncmp(buf,"write\r\n",6)==0){
+    //}else if(strncmp(cmd,"write\n",6)==0){
+    //}else if(cmd == "write\n"){
+        //ssize_t n = recv(client,buf,1024,0);
+        //repo.write()
+        cout <<"buff:"<< buf << ":buff"<<endl;
+        strncpy(buf,"+OK\r\n",1024);
+        write(client, buf, strlen(buf));
+        close(client);
+    }else{
+        cerr << "Command unknown: " << endl;
+        close(client);
+        return EXIT_FAILURE;
+    }
+    //string cmd(buf,sizeof(READ_CMD));
+    //cout << ":"<<cmd<<":"<<endl;
+    
+    /*if(payload.start_with("read")){
+     send("OK:"+content.read());
+     }else if(payload.starts_with("write")){
+     //read body
+     string newContent = payload.readbody()
+     content.write(newContent);
+     send("OK:");
+     }*/
+    
     return 0;
 }
 
@@ -83,6 +136,7 @@ int main(int argc, const char * argv[]) {
         cerr << "Socket listen failed: " << strerror(errno) << endl;
         return EXIT_FAILURE;
     }
+    Repository * repo = new Repository("./foo");
     while(true){
         struct sockaddr_in client_addr;
         socklen_t client_addr_len = sizeof(client_addr);
@@ -91,13 +145,15 @@ int main(int argc, const char * argv[]) {
             cerr << "Socket accept failed: " << strerror(errno) << endl;
             return EXIT_FAILURE;
         }
-        respond(client);
+        //respond(client);
+        respond(client,repo);
         /*int child_pid = fork();
         if(child_pid < 0){//error
             
         }else if(child_pid == 0){//child
-            //close(server);
             
+            return 0;
+            //close(server);
         }else{//parent
             //close(client);
             continue;
@@ -105,18 +161,11 @@ int main(int argc, const char * argv[]) {
         cout << "wait"<<endl;
         //fork(){//process thread
         
-        /*if(payload.start_with("read")){
-         send("OK:"+content.read());
-         }else if(payload.starts_with("write")){
-         //read body
-         string newContent = payload.readbody()
-         content.write(newContent);
-         send("OK:");
-         }*/
+
 
         //}
     }
-    close(server);
+    //close(server);
     return 0;
     // accpect
     
