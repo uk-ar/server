@@ -1,7 +1,9 @@
-usage: server <thread|process>
+usage: 
+- server <thread|process>
+
 example:
-server thread   'run as multithread'
-server process  'run as multiprocess'
+- server thread   'run as multithread'
+- server process  'run as multiprocess'
 
 limitations:
 
