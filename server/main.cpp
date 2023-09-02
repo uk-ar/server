@@ -112,23 +112,17 @@ public:
         close(server_fd);
     }
     int respond(int client,Repository *repo){
-        //char buf[1024];
         char buf[1024];
-        //cout << sizeof(READ_CMD) << endl;
         ssize_t n = read(client,buf,CMD_LEN);//ignore null char
-        //ssize_t n = read(client,buf,1024);
         if(n < 0){
             close(client);
             return EXIT_FAILURE;
         }
-        cout << n << endl;
         string cmd(buf,n);
-        cout << ":" << cmd << ":"<<endl;
         if(cmd == READ_CMD){
             string content; //todo: support large file
             repo->read(content);
             content.copy(buf,1024);
-            cout <<"buff:"<< content << ":buff"<<content.size()<<endl;
             write(client, buf, content.size());// ignore null char
             close(client);
         }else if(cmd == WRITE_CMD){
@@ -139,7 +133,6 @@ public:
             }
             string cont(buf,n);
             repo->write(buf);
-            cout <<"buff:"<< cont << ":buff"<<endl;
             strncpy(buf,"OK\r\n",1024);
             write(client, buf, strlen(buf));
             close(client);
@@ -199,23 +192,6 @@ class MultiThreadServer : public Server{
     int run(Repository *repo) override;
 };
 
-/*class Worker{
-    int client;
-    Repository*repo;
-    MultiThreadServer *server;
-    Worker(int client_fd,Repository *repository,MultiThreadServer *serv){
-        client = client_fd;
-        repo = repository;
-        server = serv;
-    }
-    void operator()(){
-        //int *server = (MultiThreadServer*)arg;
-        //cout <<"create thread"<< *pval << endl;
-        //server->respond()
-        //pthread_exit(pval);
-        server->respond(client,repo);
-    }
-};*/
 class Pack{
     int client;
     Repository*repo;
@@ -234,12 +210,6 @@ public:
 void *worker(void *arg) {
     char *ret;
     Pack *pack = (Pack*)arg;
-  //printf("thread() entered with argument '%s'¥n", arg);
-    /*if ((ret = (char*) malloc(20)) == NULL) {
-        perror("malloc() error");
-        exit(2);
-    }
-    strcpy(ret, "This is a test");*/
     pack->run();
     pthread_exit(&ret);
 }
@@ -258,22 +228,6 @@ int MultiThreadServer::run(Repository *repo){
         if(pthread_create(&thid, NULL, worker, (void *)pack)){
             
         }
-        //thread t1(this);
-        //respond(client);
-        //int child_pid = fork();
-        /*if(child_pid < 0){//error
-            return EXIT_FAILURE;
-        }else if(child_pid == 0){//child
-            //cout << "child start" << endl;
-            respond(client,repo);
-            sleep(10);
-            //cout << "child end" << endl;
-            return 0;
-            //close(server); ?
-        }else{//parent
-            //close(client); ?
-            continue;
-        }*/
     }
     // TODO: signal handling
     // TODO: wait for children
