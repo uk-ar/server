@@ -70,11 +70,45 @@ public:
 
 class Server{
 public:
+    int server_fd;
     Server(){
+        // create a socket
+        server_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if(server_fd == -1){
+            cerr << "Socket creation failed: " << strerror(errno) << endl;
+            throw runtime_error("foo");
+            //return EXIT_FAILURE;
+        }
+        // enable to launch multiple times
+        int reuse_flag = 1;// 1 means true
+        if(setsockopt(server_fd,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag)) == -1){
+            cerr << "Socket cannot reuse: " << strerror(errno) << endl;
+            throw runtime_error("foo");
+            //return EXIT_FAILURE;
+        }
         
+        struct sockaddr_in server_addr = {
+            .sin_family = AF_INET,
+            .sin_port   = htons(PORT),
+            .sin_addr   = {htonl(INADDR_ANY)},
+        };// C++20
+
+        // bind port
+        if(::bind(server_fd,(struct sockaddr *)&server_addr, sizeof(server_addr)) == -1){
+            cerr << "Socket bind failed: " << strerror(errno) << endl;
+            throw runtime_error("foo");
+            //return EXIT_FAILURE;
+        }
+        cout << "Waiting for a client..." << endl;
+
+        if(listen(server_fd,BACKLOG) == -1){
+            cerr << "Socket listen failed: " << strerror(errno) << endl;
+            throw runtime_error("foo");
+            //return EXIT_FAILURE;
+        }
     }
     ~Server(){
-        
+        close(server_fd);
     }
     int respond(int client,Repository *repo){
         //char buf[1024];
@@ -125,80 +159,40 @@ class MultiThreadServer : public Server{
 
 
 int main(int argc, const char * argv[]) {
-    // create a socket
-    cout << argv[0]<<endl;
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if(server_fd == -1){
-        cerr << "Socket creation failed: " << strerror(errno) << endl;
-        return EXIT_FAILURE;
-    }
-    // enable to launch multiple times
-    int reuse_flag = 1;// 1 means true
-    if(setsockopt(server_fd,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag)) == -1){
-        cerr << "Socket cannot reuse: " << strerror(errno) << endl;
-        return EXIT_FAILURE;
-    }
-    
-    struct sockaddr_in server_addr = {
-        .sin_family = AF_INET,
-        .sin_port   = htons(PORT),
-        .sin_addr   = {htonl(INADDR_ANY)},
-    };// C++20
+    try{
+        Server server = Server();
+        Repository * repo = new Repository("./foo");
+        while(true){
+            struct sockaddr_in client_addr;
+            socklen_t client_addr_len = sizeof(client_addr);
+            int client = accept(server.server_fd, (struct sockaddr *)&client_addr,&client_addr_len);
+            if(client == -1){
+                cerr << "Socket accept failed: " << strerror(errno) << endl;
+                return EXIT_FAILURE;
+            }
+            //respond(client);
+            server.respond(client,repo);
+            /*int child_pid = fork();
+            if(child_pid < 0){//error
+                
+            }else if(child_pid == 0){//child
+                
+                return 0;
+                //close(server);
+            }else{//parent
+                //close(client);
+                continue;
+            }*/
+            cout << "wait"<<endl;
+            //fork(){//process thread
+            
 
-    // bind port
-    if(::bind(server_fd,(struct sockaddr *)&server_addr, sizeof(server_addr)) == -1){
-        cerr << "Socket bind failed: " << strerror(errno) << endl;
-        return EXIT_FAILURE;
-    }
-    cout << "Waiting for a client..." << endl;
-    //Content *content = new Content(CONTENT_PATH);
 
-    if(listen(server_fd,BACKLOG) == -1){
-        cerr << "Socket listen failed: " << strerror(errno) << endl;
-        return EXIT_FAILURE;
-    }
-    Server server = Server();
-    Repository * repo = new Repository("./foo");
-    while(true){
-        struct sockaddr_in client_addr;
-        socklen_t client_addr_len = sizeof(client_addr);
-        int client = accept(server_fd, (struct sockaddr *)&client_addr,&client_addr_len);
-        if(client == -1){
-            cerr << "Socket accept failed: " << strerror(errno) << endl;
-            return EXIT_FAILURE;
+            //}
         }
-        //respond(client);
-        server.respond(client,repo);
-        /*int child_pid = fork();
-        if(child_pid < 0){//error
-            
-        }else if(child_pid == 0){//child
-            
-            return 0;
-            //close(server);
-        }else{//parent
-            //close(client);
-            continue;
-        }*/
-        cout << "wait"<<endl;
-        //fork(){//process thread
+    }catch(runtime_error e){
         
-
-
-        //}
     }
     //close(server);
     return 0;
-    // accpect
-    
-    
-    // recv data from client
-        // read command
-            // send file content
-        // write command
-            // lock the file
-            // read the payload
-            // write to the file
-            // unlock the file
-    // send status
 }
