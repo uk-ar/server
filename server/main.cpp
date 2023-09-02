@@ -68,57 +68,73 @@ public:
     }
 };
 
-int respond(int client,Repository *repo){
-    //char buf[1024];
-    char buf[1024];
-    //cout << sizeof(READ_CMD) << endl;
-    ssize_t n = read(client,buf,CMD_LEN);//ignore null char
-    //ssize_t n = read(client,buf,1024);
-    if(n < 0){
-        close(client);
-        return EXIT_FAILURE;
+class Server{
+public:
+    Server(){
+        
     }
-    cout << n << endl;
-    string cmd(buf,n);
-    cout << ":" << cmd << ":"<<endl;
-    if(cmd == READ_CMD){
-        string content; //todo: support large file
-        repo->read(content);
-        content.copy(buf,1024);
-        cout <<"buff:"<< content << ":buff"<<content.size()<<endl;
-        write(client, buf, content.size());// ignore null char
-        close(client);
-    }else if(cmd == WRITE_CMD){
-        n = read(client,buf,1024);
+    ~Server(){
+        
+    }
+    int respond(int client,Repository *repo){
+        //char buf[1024];
+        char buf[1024];
+        //cout << sizeof(READ_CMD) << endl;
+        ssize_t n = read(client,buf,CMD_LEN);//ignore null char
+        //ssize_t n = read(client,buf,1024);
         if(n < 0){
             close(client);
             return EXIT_FAILURE;
         }
-        string cont(buf,n);
-        repo->write(buf);
-        cout <<"buff:"<< cont << ":buff"<<endl;
-        strncpy(buf,"OK\r\n",1024);
-        write(client, buf, strlen(buf));
-        close(client);
-    }else{
-        cerr << "Command unknown: " << endl;
-        close(client);
-        return EXIT_FAILURE;
+        cout << n << endl;
+        string cmd(buf,n);
+        cout << ":" << cmd << ":"<<endl;
+        if(cmd == READ_CMD){
+            string content; //todo: support large file
+            repo->read(content);
+            content.copy(buf,1024);
+            cout <<"buff:"<< content << ":buff"<<content.size()<<endl;
+            write(client, buf, content.size());// ignore null char
+            close(client);
+        }else if(cmd == WRITE_CMD){
+            n = read(client,buf,1024);
+            if(n < 0){
+                close(client);
+                return EXIT_FAILURE;
+            }
+            string cont(buf,n);
+            repo->write(buf);
+            cout <<"buff:"<< cont << ":buff"<<endl;
+            strncpy(buf,"OK\r\n",1024);
+            write(client, buf, strlen(buf));
+            close(client);
+        }else{
+            cerr << "Command unknown: " << endl;
+            close(client);
+            return EXIT_FAILURE;
+        }
+        return 0;
     }
-    return 0;
-}
+};
+class MultiProcessServer : public Server{
+    
+};
+class MultiThreadServer : public Server{
+    
+};
+
 
 int main(int argc, const char * argv[]) {
     // create a socket
     cout << argv[0]<<endl;
-    int server = socket(AF_INET, SOCK_STREAM, 0);
-    if(server == -1){
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if(server_fd == -1){
         cerr << "Socket creation failed: " << strerror(errno) << endl;
         return EXIT_FAILURE;
     }
     // enable to launch multiple times
     int reuse_flag = 1;// 1 means true
-    if(setsockopt(server,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag)) == -1){
+    if(setsockopt(server_fd,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag)) == -1){
         cerr << "Socket cannot reuse: " << strerror(errno) << endl;
         return EXIT_FAILURE;
     }
@@ -130,28 +146,29 @@ int main(int argc, const char * argv[]) {
     };// C++20
 
     // bind port
-    if(::bind(server,(struct sockaddr *)&server_addr, sizeof(server_addr)) == -1){
+    if(::bind(server_fd,(struct sockaddr *)&server_addr, sizeof(server_addr)) == -1){
         cerr << "Socket bind failed: " << strerror(errno) << endl;
         return EXIT_FAILURE;
     }
     cout << "Waiting for a client..." << endl;
     //Content *content = new Content(CONTENT_PATH);
 
-    if(listen(server,BACKLOG) == -1){
+    if(listen(server_fd,BACKLOG) == -1){
         cerr << "Socket listen failed: " << strerror(errno) << endl;
         return EXIT_FAILURE;
     }
+    Server server = Server();
     Repository * repo = new Repository("./foo");
     while(true){
         struct sockaddr_in client_addr;
         socklen_t client_addr_len = sizeof(client_addr);
-        int client = accept(server, (struct sockaddr *)&client_addr,&client_addr_len);
+        int client = accept(server_fd, (struct sockaddr *)&client_addr,&client_addr_len);
         if(client == -1){
             cerr << "Socket accept failed: " << strerror(errno) << endl;
             return EXIT_FAILURE;
         }
         //respond(client);
-        respond(client,repo);
+        server.respond(client,repo);
         /*int child_pid = fork();
         if(child_pid < 0){//error
             
