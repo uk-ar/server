@@ -13,6 +13,7 @@
 #include <unistd.h> // for close
 #include <string>
 #include <stdio.h>
+#include <filesystem>
 
 #define PORT 8080
 #define CONTENT_PATH "/tmp/some/path"
@@ -27,9 +28,16 @@ class Repository{
     pthread_mutex_t lock;
     string filePath;
 public:
-    Repository(string filePath){
+    Repository(string file){
         pthread_mutex_init(&lock, NULL);
-        filePath = filePath;
+        filePath = file;
+        // create file if not exist
+        if(!filesystem::is_regular_file(filePath)){
+            ofstream ofs(filePath);
+            if(!ofs){
+                // TODO:error check
+            }
+        }
     }
     ~Repository(){
         
@@ -53,6 +61,7 @@ public:
         }
         file.open(filePath);
         file << newContent;
+        file.flush();
         file.close();
         pthread_mutex_unlock(&lock);
         return true;
@@ -63,7 +72,7 @@ int respond(int client,Repository *repo){
     //char buf[1024];
     char buf[1024];
     //cout << sizeof(READ_CMD) << endl;
-    ssize_t n = read(client,buf,CMD_LEN);//-null char
+    ssize_t n = read(client,buf,CMD_LEN);//ignore null char
     //ssize_t n = read(client,buf,1024);
     if(n < 0){
         close(client);
@@ -73,23 +82,20 @@ int respond(int client,Repository *repo){
     string cmd(buf,n);
     cout << ":" << cmd << ":"<<endl;
     if(cmd == READ_CMD){
-    //if(strncmp(buf,"read \r\n",6)==0){
-        //if(cmd == "read \n"){
-        //snprintf(buf,sizeof(buf),"%s\n%s","write",argv[3]);
-        strncpy(buf,"PONG\r\n",1024);
-        write(client, buf, strlen(buf));
+        string content; //todo: support large file
+        repo->read(content);
+        content.copy(buf,1024);
+        cout <<"buff:"<< content << ":buff"<<content.size()<<endl;
+        write(client, buf, content.size());// ignore null char
         close(client);
-    //}else if(strncmp(buf,"write\r\n",6)==0){
     }else if(cmd == WRITE_CMD){
-    //}else if(cmd == "write\n"){
-        //ssize_t n = recv(client,buf,1024,0);
-        //repo.write()
         n = read(client,buf,1024);
         if(n < 0){
             close(client);
             return EXIT_FAILURE;
         }
         string cont(buf,n);
+        repo->write(buf);
         cout <<"buff:"<< cont << ":buff"<<endl;
         strncpy(buf,"OK\r\n",1024);
         write(client, buf, strlen(buf));
@@ -99,18 +105,6 @@ int respond(int client,Repository *repo){
         close(client);
         return EXIT_FAILURE;
     }
-    //string cmd(buf,sizeof(READ_CMD));
-    //cout << ":"<<cmd<<":"<<endl;
-    
-    /*if(payload.start_with("read")){
-     send("OK:"+content.read());
-     }else if(payload.starts_with("write")){
-     //read body
-     string newContent = payload.readbody()
-     content.write(newContent);
-     send("OK:");
-     }*/
-    
     return 0;
 }
 
