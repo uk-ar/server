@@ -110,6 +110,9 @@ public:
     ~Server(){
         close(server_fd);
     }
+    int get_fd(){
+        return server_fd;
+    }
     int respond(int client,Repository *repo){
         //char buf[1024];
         char buf[1024];
@@ -160,18 +163,19 @@ class MultiThreadServer : public Server{
 
 int main(int argc, const char * argv[]) {
     try{
-        Server server = Server();
+        //Server server = Server();
+        Server *server = new MultiProcessServer();
         Repository * repo = new Repository("./foo");
         while(true){
             struct sockaddr_in client_addr;
             socklen_t client_addr_len = sizeof(client_addr);
-            int client = accept(server.server_fd, (struct sockaddr *)&client_addr,&client_addr_len);
+            int client = accept(server->get_fd(), (struct sockaddr *)&client_addr,&client_addr_len);
             if(client == -1){
                 cerr << "Socket accept failed: " << strerror(errno) << endl;
                 return EXIT_FAILURE;
             }
             //respond(client);
-            server.respond(client,repo);
+            server->respond(client,repo);
             /*int child_pid = fork();
             if(child_pid < 0){//error
                 
