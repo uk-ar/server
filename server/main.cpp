@@ -8,7 +8,8 @@
 #include <iostream>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h> //for struct_in
+#include <netinet/in.h> // for struct_in
+#include <unistd.h> // for close
 #include <string>
 #include <stdio.h>
 
@@ -39,13 +40,13 @@ public:
 int main(int argc, const char * argv[]) {
     // create a socket
     int server = socket(AF_INET, SOCK_STREAM, 0);
-    if(server < 0){
+    if(server == -1){
         cerr << "Socket creation failed: " << strerror(errno) << endl;
         return 1;
     }
     // enable to launch multiple times
     int reuse_flag = 1;// 1 means true
-    if(setsockopt(server,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag))){
+    if(setsockopt(server,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag)) != 0){
         cerr << "Socket cannot reuse: " << strerror(errno) << endl;
         return 1;
     }
@@ -57,23 +58,29 @@ int main(int argc, const char * argv[]) {
     };
 
     // bind port
-    if(::bind(server,(struct sockaddr *)&server_addr, sizeof(server_addr))!=0){
+    if(::bind(server,(struct sockaddr *)&server_addr, sizeof(server_addr)) != 0){
         cerr << "Socket bind failed: " << strerror(errno) << endl;
         return 1;
     }
     cout << "Waiting for a client..." << endl;
     //Content *content = new Content(CONTENT_PATH);
-    
+
+    if(listen(server,BACKLOG) != 0){
+        cerr << "Socket listen failed: " << strerror(errno) << endl;
+        return 1;
+    }
     struct sockaddr_in client_addr;
     char buf[1024];
+    socklen_t client_addr_len = sizeof(client_addr);
+    int client = accept(server, (struct sockaddr *)&client_addr,&client_addr_len);
+    if(client == -1){
+        cerr << "Socket accept failed: " << strerror(errno) << endl;
+        return 1;
+    }
     while(true){
         // listen
-        if(listen(server,BACKLOG)!=0){
-            cerr << "Socket listen failed: " << strerror(errno) << endl;
-            return 1;
-        }
-        socklen_t client_addr_len = sizeof(client_addr);
-        int client = accept(server, (struct sockaddr *)&client_addr,&client_addr_len);
+        cout << "wait"<<endl;
+        
         //fork(){//process thread
         
         ssize_t n = recv(client,buf,1024,0);
@@ -90,7 +97,10 @@ int main(int argc, const char * argv[]) {
         }*/
         strncpy(buf,"+PONG\r\n",1024);
         send(client, buf, strlen(buf),0);
+        cout << "replied"<<endl;
     }
+    close(server);
+    return 0;
     // accpect
     
     
