@@ -195,58 +195,61 @@ class MultiProcessServer : public Server{
     }
 };
 
+class MultiThreadServer : public Server{
+    int run(Repository *repo) override;
+};
 
-class Worker(){
-    Worker(){
-        
+class Worker{
+    int client;
+    Repository*repo;
+    MultiThreadServer *server;
+    Worker(int client_fd,Repository *repository,MultiThreadServer *serv){
+        client = client_fd;
+        repo = repository;
+        server = serv;
     }
     void operator()(){
         //int *server = (MultiThreadServer*)arg;
         //cout <<"create thread"<< *pval << endl;
         //server->respond()
         //pthread_exit(pval);
-        respond(client,repo);
-    }
-    
-}
-
-class MultiThreadServer : public Server{
-
-    int run(Repository *repo) override{
-        while(true){
-            struct sockaddr_in client_addr;
-            socklen_t client_addr_len = sizeof(client_addr);
-            int client = accept(server_fd, (struct sockaddr *)&client_addr,&client_addr_len);
-            if(client == -1){
-                cerr << "Socket accept failed: " << strerror(errno) << endl;
-                return EXIT_FAILURE;
-            }
-            //pthread_t thid;
-            /*if(pthread_create(&thid, NULL, thread, (void *)this)){
-                
-            }*/
-            thread t1(this);
-            //respond(client);
-            int child_pid = fork();
-            if(child_pid < 0){//error
-                return EXIT_FAILURE;
-            }else if(child_pid == 0){//child
-                //cout << "child start" << endl;
-                respond(client,repo);
-                sleep(10);
-                //cout << "child end" << endl;
-                return 0;
-                //close(server); ?
-            }else{//parent
-                //close(client); ?
-                continue;
-            }
-        }
-        // TODO: signal handling
-        // TODO: wait for children
+        server->respond(client,repo);
     }
 };
 
+int MultiThreadServer::run(Repository *repo){
+    while(true){
+        struct sockaddr_in client_addr;
+        socklen_t client_addr_len = sizeof(client_addr);
+        int client = accept(server_fd, (struct sockaddr *)&client_addr,&client_addr_len);
+        if(client == -1){
+            cerr << "Socket accept failed: " << strerror(errno) << endl;
+            return EXIT_FAILURE;
+        }
+        //pthread_t thid;
+        if(pthread_create(&thid, NULL, thread, (void *)this)){
+            
+        }
+        //thread t1(this);
+        //respond(client);
+        //int child_pid = fork();
+        /*if(child_pid < 0){//error
+            return EXIT_FAILURE;
+        }else if(child_pid == 0){//child
+            //cout << "child start" << endl;
+            respond(client,repo);
+            sleep(10);
+            //cout << "child end" << endl;
+            return 0;
+            //close(server); ?
+        }else{//parent
+            //close(client); ?
+            continue;
+        }*/
+    }
+    // TODO: signal handling
+    // TODO: wait for children
+}
 
 int main(int argc, const char * argv[]) {
     try{
