@@ -16,8 +16,10 @@
 #include <stdio.h>
 #include <filesystem>
 #include <pthread.h>
+#include <filesystem>
 
 #define PORT 8080
+#define BUFF_SIZE 1024
 #define CONTENT_PATH "/tmp/some/path"
 #define BACKLOG 5 // number of client
 #define READ_CMD  "read \r\n"
@@ -28,6 +30,7 @@
 #define CMD_LEN (sizeof(READ_CMD)-1)
 
 using namespace std;
+namespace fs = std::filesystem;
 
 class Repository{
     pthread_mutex_t lock;
@@ -126,7 +129,7 @@ public:
         close(server_fd);
     }
     int respond(int client,Repository *repo){
-        char buf[1024];
+        char buf[BUFF_SIZE];
         ssize_t n = read(client,buf,CMD_LEN);
         if(n < 0){
             close(client);
@@ -136,18 +139,18 @@ public:
         if(cmd == READ_CMD){
             stringstream content; //TODO: support large file
             repo->read(content);
-            long n = content.rdbuf()->sgetn(buf,1024);
+            long n = content.rdbuf()->sgetn(buf,BUFF_SIZE);
             write(client, buf, n);
             close(client);
         }else if(cmd == WRITE_CMD){
-            n = read(client,buf,1024);
+            n = read(client,buf,BUFF_SIZE);
             if(n < 0){
                 close(client);
                 return EXIT_FAILURE;
             }
             string cont(buf,n);
             repo->write(cont);
-            strncpy(buf,"OK\r\n",1024);
+            strncpy(buf,"OK\r\n",BUFF_SIZE);
             write(client, buf, strlen(buf));
             close(client);
         }else if(cmd == INSERT_CMD){
@@ -159,14 +162,14 @@ public:
             }
             string spos(buf,n);
             long long pos = stoll(spos);
-            n = read(client,buf,1024);
+            n = read(client,buf,BUFF_SIZE);
             if(n < 0){
                 close(client);
                 return EXIT_FAILURE;
             }
             string cont(buf,n);
             repo->insert(cont,pos);
-            strncpy(buf,"OK\r\n",1024);
+            strncpy(buf,"OK\r\n",BUFF_SIZE);
             write(client, buf, strlen(buf));
             close(client);
         }else{
@@ -263,8 +266,10 @@ int MultiThreadServer::run(Repository *repo){
     // TODO: wait for children
 }
 
-void print_usage(string file_name){
-    cout << file_name << " <thread|process>" << endl;
+void print_usage(fs::path path){
+    string file_name = path.filename();
+    cout << "usage:" << endl;
+    cout << file_name << " <thread|process>" << endl << endl;
     cout << "example:" << endl;
     cout << "> " << file_name << " thread" << "   'run as multithread'"<< endl;
     cout << "> " << file_name << " process" << "  'run as multiprocess'"<< endl;
@@ -280,17 +285,17 @@ int main(int argc, const char * argv[]) {
     try{
         Repository * repo = new Repository("./foo");
 
+        Server *server = nullptr;
         if(args[1] == "thread"){
-            Server *server = new MultiThreadServer();
-            server->run(repo);
+            server = new MultiThreadServer();
         }else if(args[1] == "process"){
-            Server *server = new MultiProcessServer();
-            server->run(repo);
+            server = new MultiProcessServer();
         }else{
             cerr << "command unknown" << endl;
             print_usage(args[0]);
             return EXIT_FAILURE;
         }
+        server->run(repo);
     }catch(runtime_error e){
         return EXIT_FAILURE;
     }
