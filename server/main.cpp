@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <pthread.h>
 #include <filesystem>
+#include <sys/shm.h>
 
 #define PORT 8080
 #define BUFF_SIZE 1024
@@ -33,11 +34,11 @@ using namespace std;
 namespace fs = std::filesystem;
 
 class Repository{
-    pthread_mutex_t lock;
+    pthread_mutex_t *mutex;
     string filePath;
 public:
-    Repository(string file){
-        pthread_mutex_init(&lock, NULL);
+    Repository(string file,pthread_mutex_t *lock){
+        mutex = lock;
         filePath = file;
         // create file if not exist
         if(!filesystem::is_regular_file(filePath)){
@@ -62,49 +63,50 @@ public:
         return true;
     }
     bool write(string &newContent){
-        pthread_mutex_lock(&lock);
+        pthread_mutex_lock(mutex);
         fstream file(filePath,ios_base::out | ios_base::trunc);
         if(!file){
-            pthread_mutex_unlock(&lock);
+            pthread_mutex_unlock(mutex);
             return false;
         }
         file << newContent;
         file.flush();
         file.close();
-        pthread_mutex_unlock(&lock);
+        pthread_mutex_unlock(mutex);
         return true;
     }
     bool insert(string &newContent, long long pos){
-        pthread_mutex_lock(&lock);
+        pthread_mutex_lock(mutex);
         fstream file(filePath,ios_base::in | ios_base::out);
         if(!file){
-            pthread_mutex_unlock(&lock);
+            pthread_mutex_unlock(mutex);
             return false;
         }
         file.seekp(pos,ios::beg);
         file << newContent;
         file.flush();
         file.close();
-        pthread_mutex_unlock(&lock);
+        pthread_mutex_unlock(mutex);
         return true;
     }
 };
-
+//abstract class
 class Server{
 public:
     int server_fd;
+    Repository * repo;
     Server(){
         // create a socket
         server_fd = socket(AF_INET, SOCK_STREAM, 0);
         if(server_fd == -1){
             cerr << "Socket creation failed: " << strerror(errno) << endl;
-            throw runtime_error("foo");
+            throw runtime_error("Server init");
         }
         // enable to launch multiple times
         int reuse_flag = 1;// 1 means true
         if(setsockopt(server_fd,SOL_SOCKET,SO_REUSEPORT,&reuse_flag,sizeof(reuse_flag)) == -1){
             cerr << "Socket cannot reuse: " << strerror(errno) << endl;
-            throw runtime_error("foo");
+            throw runtime_error("Server init");
         }
         
         struct sockaddr_in server_addr = {
@@ -116,13 +118,13 @@ public:
         // bind port
         if(::bind(server_fd,(struct sockaddr *)&server_addr, sizeof(server_addr)) == -1){
             cerr << "Socket bind failed: " << strerror(errno) << endl;
-            throw runtime_error("foo");
+            throw runtime_error("Server init");
         }
         cout << "Waiting for a client..." << endl;
 
         if(listen(server_fd,BACKLOG) == -1){
             cerr << "Socket listen failed: " << strerror(errno) << endl;
-            throw runtime_error("foo");
+            throw runtime_error("Server init");
         }
     }
     virtual ~Server(){
@@ -179,7 +181,7 @@ public:
         }
         return 0;
     }
-    virtual int run(Repository *repo){
+    virtual int run(){
         while(true){
             struct sockaddr_in client_addr;
             socklen_t client_addr_len = sizeof(client_addr);
@@ -194,7 +196,50 @@ public:
     }
 };
 class MultiProcessServer : public Server{
-    int run(Repository *repo) override{
+public:
+    int shmid;
+    pthread_mutex_t *lock;
+    MultiProcessServer():Server(){
+        pthread_mutexattr_t attr;
+        // shared memory for mutex
+        shmid = shmget(IPC_PRIVATE, sizeof(pthread_mutex_t), 0600);
+        if (shmid < 0) {
+            perror("Shared memory cannot get:");
+            throw runtime_error("Server init");
+        }
+
+        // attach shared memory
+        lock = (pthread_mutex_t *)shmat(shmid, NULL, 0);
+        if (lock == (pthread_mutex_t *)-1) {
+            perror("Shared memory cannot get:");
+            throw runtime_error("Server init");
+        }
+        
+        // initialize attribute
+        if (pthread_mutexattr_init(&attr) != 0) {
+            perror("pthread_mutexattr_setpshared");
+            throw runtime_error("Server init");
+        }
+        /* initialize with shared memory setting */
+        if (pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED) != 0) {
+            perror("pthread_mutexattr_setpshared");
+            throw runtime_error("Server init");
+        }
+
+        pthread_mutex_init(lock, &attr);
+        repo = new Repository("./foo",lock);
+    }
+    ~MultiProcessServer(){
+        // detach shared memory
+        if(shmdt((const void*)lock)!= 0) {
+            perror("shmdt");
+        }
+        
+        if (shmctl(shmid, IPC_RMID, NULL) != 0) {
+            perror("shmctl");
+        }
+    }
+    int run() override{
         while(true){
             struct sockaddr_in client_addr;
             socklen_t client_addr_len = sizeof(client_addr);
@@ -222,7 +267,20 @@ class MultiProcessServer : public Server{
 };
 
 class MultiThreadServer : public Server{
-    int run(Repository *repo) override;
+public:
+    MultiThreadServer() : Server(){
+        pthread_mutex_t* mutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
+        if (mutex == NULL) {
+            perror("malloc");
+            throw runtime_error("Server init");
+        }
+        if(pthread_mutex_init(mutex, NULL) != 0) {
+            perror("pthread_mutex_init");
+            throw runtime_error("Server init");
+        }
+        repo = new Repository("./foo",mutex);
+    }
+    int run() override;
 };
 
 class Pack{
@@ -247,7 +305,9 @@ void *worker(void *arg) {
     pthread_exit(&ret);
 }
 
-int MultiThreadServer::run(Repository *repo){
+
+
+int MultiThreadServer::run(){
     while(true){
         struct sockaddr_in client_addr;
         socklen_t client_addr_len = sizeof(client_addr);
@@ -283,19 +343,19 @@ int main(int argc, const char * argv[]) {
         return EXIT_FAILURE;
     }
     try{
-        Repository * repo = new Repository("./foo");
-
         Server *server = nullptr;
         if(args[1] == "thread"){
+            cout << "running multi thread server" << endl;
             server = new MultiThreadServer();
         }else if(args[1] == "process"){
+            cout << "running multi process server" << endl;
             server = new MultiProcessServer();
         }else{
             cerr << "command unknown" << endl;
             print_usage(args[0]);
             return EXIT_FAILURE;
         }
-        server->run(repo);
+        server->run();
     }catch(runtime_error e){
         return EXIT_FAILURE;
     }

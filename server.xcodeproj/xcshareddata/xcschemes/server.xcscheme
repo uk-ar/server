@@ -52,7 +52,7 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "thread"
+            argument = "process"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
